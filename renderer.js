@@ -46,31 +46,23 @@ const feedbackMessages = {
 async function init() {
     try {
         updateStatus('Loading model...');
-        console.log('Starting model initialization...');
         
         // Load PoseNet for pose detection
-        console.log('Loading PoseNet...');
         poseNet = await posenet.load({
             architecture: 'MobileNetV1',
             outputStride: 16,
             inputResolution: { width: 256, height: 256 },
             multiplier: 0.75
         });
-        console.log('PoseNet loaded successfully');
         
         // Load the TensorFlow.js model directly
-        console.log('Loading TensorFlow.js model...');
         const modelURL = './my-pose-model/model.json';
-        console.log('Model URL:', modelURL);
         model = await tf.loadLayersModel(modelURL);
-        console.log('TensorFlow.js model loaded successfully');
         
         // Load metadata for labels
-        console.log('Loading metadata...');
         const metadataResponse = await fetch('./my-pose-model/metadata.json');
         const metadata = await metadataResponse.json();
         window.modelLabels = metadata.labels;
-        console.log('Metadata loaded, labels:', metadata.labels);
         
         updateStatus('Model loaded successfully');
         
@@ -264,8 +256,6 @@ function applyAccuracyImprovements(prediction) {
         }
     });
     
-    console.log('Raw prediction:', { predictedClass, maxProb, probabilities });
-    
     // Add to prediction history for temporal smoothing
     predictionHistory.push({
         class: predictedClass,
@@ -280,8 +270,6 @@ function applyAccuracyImprovements(prediction) {
     
     // Apply temporal smoothing
     const smoothedPrediction = applyTemporalSmoothing();
-    
-    console.log('Smoothed prediction:', smoothedPrediction);
     
     // Always show prediction, but mark as unstable if confidence is low
     const isStable = smoothedPrediction.confidence > confidenceThreshold;
