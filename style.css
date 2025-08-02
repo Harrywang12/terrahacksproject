@@ -193,6 +193,55 @@ main {
     color: #333;
 }
 
+/* Accuracy metrics */
+.accuracy-metrics {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 15px;
+    margin-top: 10px;
+}
+
+.metric-card {
+    background: white;
+    border-radius: 12px;
+    padding: 15px;
+    box-shadow: 0 3px 15px rgba(0,0,0,0.1);
+    text-align: center;
+    transition: transform 0.2s ease;
+}
+
+.metric-card:hover {
+    transform: translateY(-2px);
+}
+
+.metric-card h4 {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #666;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.metric-value {
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: #333;
+    font-family: 'Courier New', monospace;
+}
+
+.metric-value.high {
+    color: #4CAF50;
+}
+
+.metric-value.medium {
+    color: #ff9800;
+}
+
+.metric-value.low {
+    color: #f44336;
+}
+
 /* Footer and controls */
 footer {
     margin-top: 30px;
@@ -264,6 +313,11 @@ footer {
     
     #pose-canvas {
         height: 300px;
+    }
+    
+    .accuracy-metrics {
+        grid-template-columns: 1fr;
+        gap: 10px;
     }
     
     .controls {

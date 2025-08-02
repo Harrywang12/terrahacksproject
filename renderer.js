@@ -7,6 +7,18 @@ let ctx;
 let isRunning = false;
 let animationId;
 
+// Accuracy improvement variables
+let predictionHistory = [];
+let lastValidPrediction = null;
+let poseQualityThreshold = 0.3; // Lowered from 0.5
+let confidenceThreshold = 0.5; // Lowered from 0.7
+let smoothingWindow = 3; // Reduced from 5
+let minPoseScore = 0.2; // Lowered from 0.3
+let consecutiveGoodFrames = 0;
+let consecutiveBadFrames = 0;
+let adaptiveThreshold = 0.5; // Lowered from 0.7
+let poseConsistencyHistory = [];
+
 // DOM elements
 const video = document.getElementById('webcam');
 const poseCanvas = document.getElementById('pose-canvas');
@@ -17,6 +29,11 @@ const confidenceText = document.getElementById('confidence-text');
 const statusIndicator = document.getElementById('status-indicator');
 const startBtn = document.getElementById('start-btn');
 const stopBtn = document.getElementById('stop-btn');
+
+// Accuracy metrics DOM elements
+const poseQualityElement = document.getElementById('pose-quality');
+const consistencyScoreElement = document.getElementById('consistency-score');
+const adaptiveThresholdElement = document.getElementById('adaptive-threshold');
 
 // Feedback messages for different posture classes
 const feedbackMessages = {
@@ -136,11 +153,23 @@ function stopCamera() {
     // Clear canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     
+    // Reset accuracy improvement variables
+    predictionHistory = [];
+    lastValidPrediction = null;
+    consecutiveGoodFrames = 0;
+    consecutiveBadFrames = 0;
+    poseConsistencyHistory = [];
+    
     // Reset UI
     updatePrediction('Camera stopped', 'loading');
     updateFeedback('Camera stopped. Click "Start Camera" to begin.');
     updateConfidence(0);
     updateStatus('Camera stopped');
+    
+    // Reset accuracy metrics
+    if (poseQualityElement) poseQualityElement.textContent = '--';
+    if (consistencyScoreElement) consistencyScoreElement.textContent = '--';
+    if (adaptiveThresholdElement) adaptiveThresholdElement.textContent = '--';
     
     if (animationId) {
         cancelAnimationFrame(animationId);
@@ -156,27 +185,42 @@ async function detectPose() {
         const pose = await poseNet.estimatePoses(video, {
             flipHorizontal: false,
             maxDetections: 1,
-            scoreThreshold: 0.3,
+            scoreThreshold: minPoseScore,
             nmsRadius: 20
         });
         
         if (pose.length > 0 && pose[0].keypoints) {
-            // Extract keypoints and create feature vector
+            // Check pose quality
+            const poseQuality = calculatePoseQuality(pose[0].keypoints);
+            
+            // Always process the pose, but show quality warning if very poor
             const keypoints = pose[0].keypoints;
             const features = extractPoseFeatures(keypoints);
             
             // Make prediction
             const prediction = await model.predict(features);
             
+            // Apply accuracy improvements
+            const improvedPrediction = applyAccuracyImprovements(prediction);
+            
             // Update UI with results
-            updatePredictionResults(prediction);
+            updatePredictionResults(improvedPrediction);
+            
+            // Update accuracy metrics
+            updateAccuracyMetrics(poseQuality, improvedPrediction);
             
             // Draw pose skeleton
             drawPose(keypoints);
+            
+            // Show warning if pose quality is very poor
+            if (poseQuality < 0.2) {
+                updateFeedback('Poor pose quality - try to position yourself better in front of the camera.');
+            }
         } else {
             updatePrediction('No person detected', 'loading');
             updateFeedback('Please position yourself in front of the camera.');
             updateConfidence(0);
+            updateAccuracyMetrics(0, null);
         }
         
         // Continue the loop
@@ -188,34 +232,24 @@ async function detectPose() {
     }
 }
 
-// Extract pose features from keypoints
-function extractPoseFeatures(keypoints) {
-    // Create a feature vector from landmark positions
-    const features = [];
+// Calculate pose quality based on keypoint scores and visibility
+function calculatePoseQuality(keypoints) {
+    const importantKeypoints = [0, 1, 2, 5, 6, 11, 12]; // nose, eyes, shoulders, hips
+    let totalScore = 0;
+    let validKeypoints = 0;
     
-    keypoints.forEach(keypoint => {
-        features.push(keypoint.position.x);
-        features.push(keypoint.position.y);
-        features.push(keypoint.score || 0); // PoseNet uses 'score'
+    importantKeypoints.forEach(index => {
+        if (keypoints[index] && keypoints[index].score > 0.2) {
+            totalScore += keypoints[index].score;
+            validKeypoints++;
+        }
     });
     
-    // Normalize features (simple min-max normalization)
-    const min = Math.min(...features);
-    const max = Math.max(...features);
-    const normalizedFeatures = features.map(f => (f - min) / (max - min));
-    
-    // Pad or truncate to match model input size (14739 features)
-    const targetSize = 14739;
-    while (normalizedFeatures.length < targetSize) {
-        normalizedFeatures.push(0);
-    }
-    
-    return tf.tensor2d([normalizedFeatures.slice(0, targetSize)], [1, targetSize]);
+    return validKeypoints > 0 ? totalScore / validKeypoints : 0;
 }
 
-// Update prediction results in the UI
-function updatePredictionResults(prediction) {
-    // Get prediction probabilities
+// Apply accuracy improvements to prediction
+function applyAccuracyImprovements(prediction) {
     const probabilities = prediction.dataSync();
     const labels = window.modelLabels || ['Good posture', 'Bad posture'];
     
@@ -230,16 +264,343 @@ function updatePredictionResults(prediction) {
         }
     });
     
-    // Update prediction label
+    console.log('Raw prediction:', { predictedClass, maxProb, probabilities });
+    
+    // Add to prediction history for temporal smoothing
+    predictionHistory.push({
+        class: predictedClass,
+        confidence: maxProb,
+        timestamp: Date.now()
+    });
+    
+    // Keep only recent predictions
+    if (predictionHistory.length > smoothingWindow) {
+        predictionHistory.shift();
+    }
+    
+    // Apply temporal smoothing
+    const smoothedPrediction = applyTemporalSmoothing();
+    
+    console.log('Smoothed prediction:', smoothedPrediction);
+    
+    // Always show prediction, but mark as unstable if confidence is low
+    const isStable = smoothedPrediction.confidence > confidenceThreshold;
+    
+    return {
+        class: smoothedPrediction.class,
+        confidence: smoothedPrediction.confidence,
+        isStable: isStable
+    };
+}
+
+// Calculate adaptive threshold based on recent performance
+function calculateAdaptiveThreshold() {
+    if (predictionHistory.length < 3) {
+        return confidenceThreshold;
+    }
+    
+    // Calculate variance in recent predictions
+    const recentConfidences = predictionHistory.slice(-3).map(p => p.confidence);
+    const meanConfidence = recentConfidences.reduce((sum, c) => sum + c, 0) / recentConfidences.length;
+    const variance = recentConfidences.reduce((sum, c) => sum + Math.pow(c - meanConfidence, 2), 0) / recentConfidences.length;
+    
+    // If predictions are stable (low variance), lower the threshold
+    // If predictions are unstable (high variance), raise the threshold
+    const stabilityFactor = Math.max(0.1, Math.min(0.3, variance));
+    
+    return confidenceThreshold + stabilityFactor;
+}
+
+// Check pose consistency over time
+function checkPoseConsistency(prediction) {
+    poseConsistencyHistory.push(prediction.class);
+    
+    // Keep only recent history
+    if (poseConsistencyHistory.length > 10) {
+        poseConsistencyHistory.shift();
+    }
+    
+    if (poseConsistencyHistory.length < 3) {
+        return 0.5; // Neutral score for insufficient history
+    }
+    
+    // Calculate consistency as percentage of most common class
+    const classCounts = {};
+    poseConsistencyHistory.forEach(className => {
+        classCounts[className] = (classCounts[className] || 0) + 1;
+    });
+    
+    const mostFrequentClass = Object.keys(classCounts).reduce((a, b) => 
+        classCounts[a] > classCounts[b] ? a : b
+    );
+    
+    const consistencyRatio = classCounts[mostFrequentClass] / poseConsistencyHistory.length;
+    
+    // Return consistency score (0-1)
+    return consistencyRatio;
+}
+
+// Apply temporal smoothing to reduce jitter
+function applyTemporalSmoothing() {
+    if (predictionHistory.length === 0) {
+        return { class: 'Analyzing...', confidence: 0 };
+    }
+    
+    // If we have very few predictions, just use the latest one
+    if (predictionHistory.length < 2) {
+        const latest = predictionHistory[predictionHistory.length - 1];
+        return {
+            class: latest.class,
+            confidence: latest.confidence
+        };
+    }
+    
+    // Group predictions by class
+    const classCounts = {};
+    const classConfidences = {};
+    
+    predictionHistory.forEach(pred => {
+        if (!classCounts[pred.class]) {
+            classCounts[pred.class] = 0;
+            classConfidences[pred.class] = 0;
+        }
+        classCounts[pred.class]++;
+        classConfidences[pred.class] += pred.confidence;
+    });
+    
+    // Find most frequent class
+    let mostFrequentClass = '';
+    let maxCount = 0;
+    
+    Object.keys(classCounts).forEach(className => {
+        if (classCounts[className] > maxCount) {
+            maxCount = classCounts[className];
+            mostFrequentClass = className;
+        }
+    });
+    
+    // If no clear winner, use the latest prediction
+    if (maxCount === 1) {
+        const latest = predictionHistory[predictionHistory.length - 1];
+        return {
+            class: latest.class,
+            confidence: latest.confidence
+        };
+    }
+    
+    // Calculate average confidence for the most frequent class
+    const avgConfidence = classConfidences[mostFrequentClass] / classCounts[mostFrequentClass];
+    
+    return {
+        class: mostFrequentClass,
+        confidence: avgConfidence
+    };
+}
+
+// Extract pose features from keypoints with improved normalization
+function extractPoseFeatures(keypoints) {
+    // Create a feature vector from landmark positions
+    const features = [];
+    
+    // Extract keypoint positions and scores
+    keypoints.forEach(keypoint => {
+        features.push(keypoint.position.x);
+        features.push(keypoint.position.y);
+        features.push(keypoint.score || 0);
+    });
+    
+    // Calculate additional posture-specific features
+    const postureFeatures = calculatePostureFeatures(keypoints);
+    features.push(...postureFeatures);
+    
+    // Improved normalization using z-score normalization
+    const normalizedFeatures = normalizeFeatures(features);
+    
+    // Pad or truncate to match model input size (14739 features)
+    const targetSize = 14739;
+    while (normalizedFeatures.length < targetSize) {
+        normalizedFeatures.push(0);
+    }
+    
+    return tf.tensor2d([normalizedFeatures.slice(0, targetSize)], [1, targetSize]);
+}
+
+// Calculate posture-specific features
+function calculatePostureFeatures(keypoints) {
+    const features = [];
+    
+    // Head position relative to shoulders
+    if (keypoints[0] && keypoints[5] && keypoints[6]) { // nose, left_shoulder, right_shoulder
+        const nose = keypoints[0].position;
+        const leftShoulder = keypoints[5].position;
+        const rightShoulder = keypoints[6].position;
+        
+        const shoulderCenterX = (leftShoulder.x + rightShoulder.x) / 2;
+        const shoulderCenterY = (leftShoulder.y + rightShoulder.y) / 2;
+        
+        // Head forward/backward position
+        const headForward = nose.x - shoulderCenterX;
+        features.push(headForward);
+        
+        // Head height relative to shoulders
+        const headHeight = shoulderCenterY - nose.y;
+        features.push(headHeight);
+        
+        // Head tilt (using eyes if available)
+        if (keypoints[1] && keypoints[2]) { // left_eye, right_eye
+            const leftEye = keypoints[1].position;
+            const rightEye = keypoints[2].position;
+            const headTilt = Math.atan2(rightEye.y - leftEye.y, rightEye.x - leftEye.x);
+            features.push(headTilt);
+        } else {
+            features.push(0);
+        }
+    } else {
+        features.push(0, 0, 0);
+    }
+    
+    // Shoulder alignment
+    if (keypoints[5] && keypoints[6]) {
+        const leftShoulder = keypoints[5].position;
+        const rightShoulder = keypoints[6].position;
+        
+        const shoulderSlope = Math.atan2(rightShoulder.y - leftShoulder.y, rightShoulder.x - leftShoulder.x);
+        features.push(shoulderSlope);
+        
+        const shoulderHeightDiff = Math.abs(leftShoulder.y - rightShoulder.y);
+        features.push(shoulderHeightDiff);
+        
+        // Shoulder width (normalized)
+        const shoulderWidth = Math.sqrt(
+            Math.pow(rightShoulder.x - leftShoulder.x, 2) + 
+            Math.pow(rightShoulder.y - leftShoulder.y, 2)
+        );
+        features.push(shoulderWidth);
+    } else {
+        features.push(0, 0, 0);
+    }
+    
+    // Spine straightness (shoulder to hip alignment)
+    if (keypoints[5] && keypoints[6] && keypoints[11] && keypoints[12]) {
+        const leftShoulder = keypoints[5].position;
+        const rightShoulder = keypoints[6].position;
+        const leftHip = keypoints[11].position;
+        const rightHip = keypoints[12].position;
+        
+        const shoulderCenterX = (leftShoulder.x + rightShoulder.x) / 2;
+        const hipCenterX = (leftHip.x + rightHip.x) / 2;
+        
+        const spineAlignment = Math.abs(shoulderCenterX - hipCenterX);
+        features.push(spineAlignment);
+        
+        // Spine angle
+        const spineAngle = Math.atan2(hipCenterX - shoulderCenterX, leftHip.y - leftShoulder.y);
+        features.push(spineAngle);
+    } else {
+        features.push(0, 0);
+    }
+    
+    // Additional posture indicators
+    if (keypoints[7] && keypoints[8] && keypoints[5] && keypoints[6]) { // elbows and shoulders
+        const leftElbow = keypoints[7].position;
+        const rightElbow = keypoints[8].position;
+        const leftShoulder = keypoints[5].position;
+        const rightShoulder = keypoints[6].position;
+        
+        // Arm angles (indicator of slouching)
+        const leftArmAngle = Math.atan2(leftElbow.y - leftShoulder.y, leftElbow.x - leftShoulder.x);
+        const rightArmAngle = Math.atan2(rightElbow.y - rightShoulder.y, rightElbow.x - rightShoulder.x);
+        
+        features.push(leftArmAngle, rightArmAngle);
+    } else {
+        features.push(0, 0);
+    }
+    
+    return features;
+}
+
+// Improved feature normalization using z-score
+function normalizeFeatures(features) {
+    const mean = features.reduce((sum, val) => sum + val, 0) / features.length;
+    const variance = features.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / features.length;
+    const stdDev = Math.sqrt(variance);
+    
+    return features.map(f => stdDev > 0 ? (f - mean) / stdDev : 0);
+}
+
+// Update prediction results in the UI with improved feedback
+function updatePredictionResults(prediction) {
+    const { class: predictedClass, confidence, isStable } = prediction;
+    
+    // Always show the prediction
     updatePrediction(predictedClass, getClassType(predictedClass));
     
-    // Update feedback
-    const feedback = feedbackMessages[predictedClass] || 'Analyzing posture...';
+    // Update feedback with more detailed information
+    const feedback = getDetailedFeedback(prediction);
     updateFeedback(feedback);
     
     // Update confidence
-    const confidence = Math.round(maxProb * 100);
-    updateConfidence(confidence);
+    const confidencePercent = Math.round(confidence * 100);
+    updateConfidence(confidencePercent);
+    
+    // Update status based on stability
+    if (isStable) {
+        updateStatus('Stable detection');
+    } else {
+        updateStatus('Low confidence - hold still');
+    }
+}
+
+// Update accuracy metrics in the UI
+function updateAccuracyMetrics(poseQuality, prediction) {
+    // Update pose quality
+    if (poseQualityElement) {
+        const qualityPercent = Math.round(poseQuality * 100);
+        poseQualityElement.textContent = `${qualityPercent}%`;
+        poseQualityElement.className = `metric-value ${qualityPercent > 70 ? 'high' : qualityPercent > 40 ? 'medium' : 'low'}`;
+    }
+    
+    // Update consistency score
+    if (consistencyScoreElement) {
+        let consistency = 0.5; // Default to neutral
+        if (prediction && prediction.class) {
+            // Create a temporary prediction object for consistency checking
+            const tempPrediction = { class: prediction.class };
+            consistency = checkPoseConsistency(tempPrediction);
+        }
+        const consistencyPercent = Math.round(consistency * 100);
+        consistencyScoreElement.textContent = `${consistencyPercent}%`;
+        consistencyScoreElement.className = `metric-value ${consistencyPercent > 80 ? 'high' : consistencyPercent > 60 ? 'medium' : 'low'}`;
+    }
+    
+    // Update adaptive threshold
+    if (adaptiveThresholdElement) {
+        const currentThreshold = calculateAdaptiveThreshold();
+        const thresholdPercent = Math.round(currentThreshold * 100);
+        adaptiveThresholdElement.textContent = `${thresholdPercent}%`;
+        adaptiveThresholdElement.className = `metric-value ${thresholdPercent < 75 ? 'high' : thresholdPercent < 85 ? 'medium' : 'low'}`;
+    }
+}
+
+// Get detailed feedback based on prediction and pose analysis
+function getDetailedFeedback(prediction) {
+    const { class: predictedClass, confidence, isStable } = prediction;
+    
+    // Base feedback
+    let feedback = feedbackMessages[predictedClass] || 'Analyzing posture...';
+    
+    // Add confidence-based feedback
+    if (confidence > 0.8) {
+        feedback += ' (Very confident)';
+    } else if (confidence > 0.6) {
+        feedback += ' (Confident)';
+    } else if (confidence > 0.4) {
+        feedback += ' (Moderate confidence)';
+    } else {
+        feedback += ' (Low confidence - hold still)';
+    }
+    
+    return feedback;
 }
 
 // Get CSS class type for styling
