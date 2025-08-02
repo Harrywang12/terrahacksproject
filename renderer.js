@@ -1,23 +1,22 @@
 // Global variables
 let model;
-let poseNet;
 let webcam;
 let canvas;
 let ctx;
 let isRunning = false;
 let animationId;
+let maxPredictions;
 
-// Accuracy improvement variables
-let predictionHistory = [];
-let lastValidPrediction = null;
-let poseQualityThreshold = 0.3; // Lowered from 0.5
-let confidenceThreshold = 0.5; // Lowered from 0.7
-let smoothingWindow = 3; // Reduced from 5
-let minPoseScore = 0.2; // Lowered from 0.3
-let consecutiveGoodFrames = 0;
-let consecutiveBadFrames = 0;
-let adaptiveThreshold = 0.5; // Lowered from 0.7
-let poseConsistencyHistory = [];
+// Notification variables
+let lastBadPostureNotification = 0;
+let notificationCooldown = 10000; // 10 seconds between notifications (reduced for testing)
+let consecutiveBadPostureCount = 0;
+let notificationThreshold = 2;
+
+// Accuracy metrics variables
+let poseQualityHistory = [];
+let consistencyHistory = [];
+let adaptiveThreshold = 0.6;
 
 // DOM elements
 const video = document.getElementById('webcam');
@@ -29,6 +28,10 @@ const confidenceText = document.getElementById('confidence-text');
 const statusIndicator = document.getElementById('status-indicator');
 const startBtn = document.getElementById('start-btn');
 const stopBtn = document.getElementById('stop-btn');
+
+// Settings DOM elements
+const notificationsEnabledCheckbox = document.getElementById('notifications-enabled');
+const testNotificationBtn = document.getElementById('test-notification-btn');
 
 // Accuracy metrics DOM elements
 const poseQualityElement = document.getElementById('pose-quality');
@@ -47,24 +50,16 @@ async function init() {
     try {
         updateStatus('Loading model...');
         
-        // Load PoseNet for pose detection
-        poseNet = await posenet.load({
-            architecture: 'MobileNetV1',
-            outputStride: 16,
-            inputResolution: { width: 256, height: 256 },
-            multiplier: 0.75
-        });
+        // Load the Teachable Machine pose model
+        const modelURL = './terrahacksmodel/model.json';
+        const metadataURL = './terrahacksmodel/metadata.json';
         
-        // Load the TensorFlow.js model directly
-        const modelURL = './my-pose-model/model.json';
-        model = await tf.loadLayersModel(modelURL);
+        console.log('Loading Teachable Machine pose model from:', modelURL);
+        model = await tmPose.load(modelURL, metadataURL);
+        maxPredictions = model.getTotalClasses();
         
-        // Load metadata for labels
-        const metadataResponse = await fetch('./my-pose-model/metadata.json');
-        const metadata = await metadataResponse.json();
-        window.modelLabels = metadata.labels;
-        
-        updateStatus('Model loaded successfully');
+        console.log('Model loaded successfully!');
+        console.log('Total classes:', maxPredictions);
         
         // Set up canvas
         canvas = poseCanvas;
@@ -73,6 +68,7 @@ async function init() {
         // Set up event listeners
         startBtn.addEventListener('click', startCamera);
         stopBtn.addEventListener('click', stopCamera);
+        testNotificationBtn.addEventListener('click', testNotification);
         
         updateStatus('Ready to start');
         
@@ -85,32 +81,22 @@ async function init() {
     }
 }
 
-
-
 // Start the webcam and pose detection
 async function startCamera() {
     try {
         updateStatus('Starting camera...');
         
-        // Get webcam stream
-        const stream = await navigator.mediaDevices.getUserMedia({
-            video: {
-                width: 640,
-                height: 480,
-                facingMode: 'user'
-            }
-        });
+        // Set up webcam using Teachable Machine API
+        const width = 700;
+        const height = 900; 
+        const flip = true; // whether to flip the webcam
+        webcam = new tmPose.Webcam(width, height, flip); // width, height, flip
+        await webcam.setup(); // request access to the webcam
+        await webcam.play();
         
-        video.srcObject = stream;
-        
-        // Wait for video to be ready
-        await new Promise((resolve) => {
-            video.onloadedmetadata = resolve;
-        });
-        
-        // Set canvas size to match video
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
+        // Set canvas size to match webcam
+        canvas.width = width;
+        canvas.height = height;
         
         // Start pose detection
         isRunning = true;
@@ -132,10 +118,8 @@ async function startCamera() {
 
 // Stop the webcam and pose detection
 function stopCamera() {
-    if (video.srcObject) {
-        const tracks = video.srcObject.getTracks();
-        tracks.forEach(track => track.stop());
-        video.srcObject = null;
+    if (webcam) {
+        webcam.stop();
     }
     
     isRunning = false;
@@ -145,23 +129,20 @@ function stopCamera() {
     // Clear canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     
-    // Reset accuracy improvement variables
-    predictionHistory = [];
-    lastValidPrediction = null;
-    consecutiveGoodFrames = 0;
-    consecutiveBadFrames = 0;
-    poseConsistencyHistory = [];
+    // Reset notification variables
+    consecutiveBadPostureCount = 0;
+    lastBadPostureNotification = 0;
+    
+    // Reset accuracy metrics
+    poseQualityHistory = [];
+    consistencyHistory = [];
+    adaptiveThreshold = 0.6;
     
     // Reset UI
     updatePrediction('Camera stopped', 'loading');
     updateFeedback('Camera stopped. Click "Start Camera" to begin.');
     updateConfidence(0);
     updateStatus('Camera stopped');
-    
-    // Reset accuracy metrics
-    if (poseQualityElement) poseQualityElement.textContent = '--';
-    if (consistencyScoreElement) consistencyScoreElement.textContent = '--';
-    if (adaptiveThresholdElement) adaptiveThresholdElement.textContent = '--';
     
     if (animationId) {
         cancelAnimationFrame(animationId);
@@ -173,46 +154,48 @@ async function detectPose() {
     if (!isRunning) return;
     
     try {
-        // Get pose keypoints using PoseNet
-        const pose = await poseNet.estimatePoses(video, {
-            flipHorizontal: false,
-            maxDetections: 1,
-            scoreThreshold: minPoseScore,
-            nmsRadius: 20
-        });
+        // Update webcam frame
+        webcam.update();
         
-        if (pose.length > 0 && pose[0].keypoints) {
-            // Check pose quality
-            const poseQuality = calculatePoseQuality(pose[0].keypoints);
+        // Prediction #1: run input through posenet
+        const { pose, posenetOutput } = await model.estimatePose(webcam.canvas);
+        
+        if (pose) {
+            // Prediction #2: run input through teachable machine classification model
+            const prediction = await model.predict(posenetOutput);
             
-            // Always process the pose, but show quality warning if very poor
-            const keypoints = pose[0].keypoints;
-            const features = extractPoseFeatures(keypoints);
+            console.log('Raw prediction:', prediction);
             
-            // Make prediction
-            const prediction = await model.predict(features);
+            // Find the class with highest probability
+            let maxProb = 0;
+            let predictedClass = '';
             
-            // Apply accuracy improvements
-            const improvedPrediction = applyAccuracyImprovements(prediction);
+            for (let i = 0; i < maxPredictions; i++) {
+                const classPrediction = prediction[i];
+                console.log(`${classPrediction.className}: ${classPrediction.probability}`);
+                
+                if (classPrediction.probability > maxProb) {
+                    maxProb = classPrediction.probability;
+                    predictedClass = classPrediction.className;
+                }
+            }
             
             // Update UI with results
-            updatePredictionResults(improvedPrediction);
+            updatePredictionResults(predictedClass, maxProb);
+            
+            // Handle notifications for bad posture
+            handlePostureNotification(predictedClass, maxProb);
             
             // Update accuracy metrics
-            updateAccuracyMetrics(poseQuality, improvedPrediction);
+            updateAccuracyMetrics(pose, maxProb);
             
             // Draw pose skeleton
-            drawPose(keypoints);
+            drawPose(pose);
             
-            // Show warning if pose quality is very poor
-            if (poseQuality < 0.2) {
-                updateFeedback('Poor pose quality - try to position yourself better in front of the camera.');
-            }
         } else {
             updatePrediction('No person detected', 'loading');
             updateFeedback('Please position yourself in front of the camera.');
             updateConfidence(0);
-            updateAccuracyMetrics(0, null);
         }
         
         // Continue the loop
@@ -224,356 +207,89 @@ async function detectPose() {
     }
 }
 
-// Calculate pose quality based on keypoint scores and visibility
-function calculatePoseQuality(keypoints) {
-    const importantKeypoints = [0, 1, 2, 5, 6, 11, 12]; // nose, eyes, shoulders, hips
-    let totalScore = 0;
-    let validKeypoints = 0;
-    
-    importantKeypoints.forEach(index => {
-        if (keypoints[index] && keypoints[index].score > 0.2) {
-            totalScore += keypoints[index].score;
-            validKeypoints++;
-        }
-    });
-    
-    return validKeypoints > 0 ? totalScore / validKeypoints : 0;
-}
-
-// Apply accuracy improvements to prediction
-function applyAccuracyImprovements(prediction) {
-    const probabilities = prediction.dataSync();
-    const labels = window.modelLabels || ['Good posture', 'Bad posture'];
-    
-    // Find the class with highest probability
-    let maxProb = 0;
-    let predictedClass = '';
-    
-    probabilities.forEach((prob, index) => {
-        if (prob > maxProb) {
-            maxProb = prob;
-            predictedClass = labels[index] || `Class ${index}`;
-        }
-    });
-    
-    // Add to prediction history for temporal smoothing
-    predictionHistory.push({
-        class: predictedClass,
-        confidence: maxProb,
-        timestamp: Date.now()
-    });
-    
-    // Keep only recent predictions
-    if (predictionHistory.length > smoothingWindow) {
-        predictionHistory.shift();
-    }
-    
-    // Apply temporal smoothing
-    const smoothedPrediction = applyTemporalSmoothing();
-    
-    // Always show prediction, but mark as unstable if confidence is low
-    const isStable = smoothedPrediction.confidence > confidenceThreshold;
-    
-    return {
-        class: smoothedPrediction.class,
-        confidence: smoothedPrediction.confidence,
-        isStable: isStable
-    };
-}
-
-// Calculate adaptive threshold based on recent performance
-function calculateAdaptiveThreshold() {
-    if (predictionHistory.length < 3) {
-        return confidenceThreshold;
-    }
-    
-    // Calculate variance in recent predictions
-    const recentConfidences = predictionHistory.slice(-3).map(p => p.confidence);
-    const meanConfidence = recentConfidences.reduce((sum, c) => sum + c, 0) / recentConfidences.length;
-    const variance = recentConfidences.reduce((sum, c) => sum + Math.pow(c - meanConfidence, 2), 0) / recentConfidences.length;
-    
-    // If predictions are stable (low variance), lower the threshold
-    // If predictions are unstable (high variance), raise the threshold
-    const stabilityFactor = Math.max(0.1, Math.min(0.3, variance));
-    
-    return confidenceThreshold + stabilityFactor;
-}
-
-// Check pose consistency over time
-function checkPoseConsistency(prediction) {
-    poseConsistencyHistory.push(prediction.class);
-    
-    // Keep only recent history
-    if (poseConsistencyHistory.length > 10) {
-        poseConsistencyHistory.shift();
-    }
-    
-    if (poseConsistencyHistory.length < 3) {
-        return 0.5; // Neutral score for insufficient history
-    }
-    
-    // Calculate consistency as percentage of most common class
-    const classCounts = {};
-    poseConsistencyHistory.forEach(className => {
-        classCounts[className] = (classCounts[className] || 0) + 1;
-    });
-    
-    const mostFrequentClass = Object.keys(classCounts).reduce((a, b) => 
-        classCounts[a] > classCounts[b] ? a : b
-    );
-    
-    const consistencyRatio = classCounts[mostFrequentClass] / poseConsistencyHistory.length;
-    
-    // Return consistency score (0-1)
-    return consistencyRatio;
-}
-
-// Apply temporal smoothing to reduce jitter
-function applyTemporalSmoothing() {
-    if (predictionHistory.length === 0) {
-        return { class: 'Analyzing...', confidence: 0 };
-    }
-    
-    // If we have very few predictions, just use the latest one
-    if (predictionHistory.length < 2) {
-        const latest = predictionHistory[predictionHistory.length - 1];
-        return {
-            class: latest.class,
-            confidence: latest.confidence
-        };
-    }
-    
-    // Group predictions by class
-    const classCounts = {};
-    const classConfidences = {};
-    
-    predictionHistory.forEach(pred => {
-        if (!classCounts[pred.class]) {
-            classCounts[pred.class] = 0;
-            classConfidences[pred.class] = 0;
-        }
-        classCounts[pred.class]++;
-        classConfidences[pred.class] += pred.confidence;
-    });
-    
-    // Find most frequent class
-    let mostFrequentClass = '';
-    let maxCount = 0;
-    
-    Object.keys(classCounts).forEach(className => {
-        if (classCounts[className] > maxCount) {
-            maxCount = classCounts[className];
-            mostFrequentClass = className;
-        }
-    });
-    
-    // If no clear winner, use the latest prediction
-    if (maxCount === 1) {
-        const latest = predictionHistory[predictionHistory.length - 1];
-        return {
-            class: latest.class,
-            confidence: latest.confidence
-        };
-    }
-    
-    // Calculate average confidence for the most frequent class
-    const avgConfidence = classConfidences[mostFrequentClass] / classCounts[mostFrequentClass];
-    
-    return {
-        class: mostFrequentClass,
-        confidence: avgConfidence
-    };
-}
-
-// Extract pose features from keypoints with improved normalization
-function extractPoseFeatures(keypoints) {
-    // Create a feature vector from landmark positions
-    const features = [];
-    
-    // Extract keypoint positions and scores
-    keypoints.forEach(keypoint => {
-        features.push(keypoint.position.x);
-        features.push(keypoint.position.y);
-        features.push(keypoint.score || 0);
-    });
-    
-    // Calculate additional posture-specific features
-    const postureFeatures = calculatePostureFeatures(keypoints);
-    features.push(...postureFeatures);
-    
-    // Improved normalization using z-score normalization
-    const normalizedFeatures = normalizeFeatures(features);
-    
-    // Pad or truncate to match model input size (14739 features)
-    const targetSize = 14739;
-    while (normalizedFeatures.length < targetSize) {
-        normalizedFeatures.push(0);
-    }
-    
-    return tf.tensor2d([normalizedFeatures.slice(0, targetSize)], [1, targetSize]);
-}
-
-// Calculate posture-specific features
-function calculatePostureFeatures(keypoints) {
-    const features = [];
-    
-    // Head position relative to shoulders
-    if (keypoints[0] && keypoints[5] && keypoints[6]) { // nose, left_shoulder, right_shoulder
-        const nose = keypoints[0].position;
-        const leftShoulder = keypoints[5].position;
-        const rightShoulder = keypoints[6].position;
-        
-        const shoulderCenterX = (leftShoulder.x + rightShoulder.x) / 2;
-        const shoulderCenterY = (leftShoulder.y + rightShoulder.y) / 2;
-        
-        // Head forward/backward position
-        const headForward = nose.x - shoulderCenterX;
-        features.push(headForward);
-        
-        // Head height relative to shoulders
-        const headHeight = shoulderCenterY - nose.y;
-        features.push(headHeight);
-        
-        // Head tilt (using eyes if available)
-        if (keypoints[1] && keypoints[2]) { // left_eye, right_eye
-            const leftEye = keypoints[1].position;
-            const rightEye = keypoints[2].position;
-            const headTilt = Math.atan2(rightEye.y - leftEye.y, rightEye.x - leftEye.x);
-            features.push(headTilt);
-        } else {
-            features.push(0);
-        }
-    } else {
-        features.push(0, 0, 0);
-    }
-    
-    // Shoulder alignment
-    if (keypoints[5] && keypoints[6]) {
-        const leftShoulder = keypoints[5].position;
-        const rightShoulder = keypoints[6].position;
-        
-        const shoulderSlope = Math.atan2(rightShoulder.y - leftShoulder.y, rightShoulder.x - leftShoulder.x);
-        features.push(shoulderSlope);
-        
-        const shoulderHeightDiff = Math.abs(leftShoulder.y - rightShoulder.y);
-        features.push(shoulderHeightDiff);
-        
-        // Shoulder width (normalized)
-        const shoulderWidth = Math.sqrt(
-            Math.pow(rightShoulder.x - leftShoulder.x, 2) + 
-            Math.pow(rightShoulder.y - leftShoulder.y, 2)
-        );
-        features.push(shoulderWidth);
-    } else {
-        features.push(0, 0, 0);
-    }
-    
-    // Spine straightness (shoulder to hip alignment)
-    if (keypoints[5] && keypoints[6] && keypoints[11] && keypoints[12]) {
-        const leftShoulder = keypoints[5].position;
-        const rightShoulder = keypoints[6].position;
-        const leftHip = keypoints[11].position;
-        const rightHip = keypoints[12].position;
-        
-        const shoulderCenterX = (leftShoulder.x + rightShoulder.x) / 2;
-        const hipCenterX = (leftHip.x + rightHip.x) / 2;
-        
-        const spineAlignment = Math.abs(shoulderCenterX - hipCenterX);
-        features.push(spineAlignment);
-        
-        // Spine angle
-        const spineAngle = Math.atan2(hipCenterX - shoulderCenterX, leftHip.y - leftShoulder.y);
-        features.push(spineAngle);
-    } else {
-        features.push(0, 0);
-    }
-    
-    // Additional posture indicators
-    if (keypoints[7] && keypoints[8] && keypoints[5] && keypoints[6]) { // elbows and shoulders
-        const leftElbow = keypoints[7].position;
-        const rightElbow = keypoints[8].position;
-        const leftShoulder = keypoints[5].position;
-        const rightShoulder = keypoints[6].position;
-        
-        // Arm angles (indicator of slouching)
-        const leftArmAngle = Math.atan2(leftElbow.y - leftShoulder.y, leftElbow.x - leftShoulder.x);
-        const rightArmAngle = Math.atan2(rightElbow.y - rightShoulder.y, rightElbow.x - rightShoulder.x);
-        
-        features.push(leftArmAngle, rightArmAngle);
-    } else {
-        features.push(0, 0);
-    }
-    
-    return features;
-}
-
-// Improved feature normalization using z-score
-function normalizeFeatures(features) {
-    const mean = features.reduce((sum, val) => sum + val, 0) / features.length;
-    const variance = features.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / features.length;
-    const stdDev = Math.sqrt(variance);
-    
-    return features.map(f => stdDev > 0 ? (f - mean) / stdDev : 0);
-}
-
-// Update prediction results in the UI with improved feedback
-function updatePredictionResults(prediction) {
-    const { class: predictedClass, confidence, isStable } = prediction;
-    
-    // Always show the prediction
+// Update prediction results in the UI
+function updatePredictionResults(predictedClass, confidence) {
+    // Update prediction display
     updatePrediction(predictedClass, getClassType(predictedClass));
     
-    // Update feedback with more detailed information
-    const feedback = getDetailedFeedback(prediction);
+    // Update feedback
+    const feedback = getDetailedFeedback(predictedClass, confidence);
     updateFeedback(feedback);
     
     // Update confidence
     const confidencePercent = Math.round(confidence * 100);
     updateConfidence(confidencePercent);
     
-    // Update status based on stability
-    if (isStable) {
-        updateStatus('Stable detection');
+    // Update status
+    if (confidence > 0.7) {
+        updateStatus('High confidence');
+    } else if (confidence > 0.5) {
+        updateStatus('Medium confidence');
     } else {
         updateStatus('Low confidence - hold still');
     }
 }
 
-// Update accuracy metrics in the UI
-function updateAccuracyMetrics(poseQuality, prediction) {
-    // Update pose quality
-    if (poseQualityElement) {
-        const qualityPercent = Math.round(poseQuality * 100);
-        poseQualityElement.textContent = `${qualityPercent}%`;
-        poseQualityElement.className = `metric-value ${qualityPercent > 70 ? 'high' : qualityPercent > 40 ? 'medium' : 'low'}`;
+// Handle posture notifications
+function handlePostureNotification(predictedClass, confidence) {
+    const now = Date.now();
+    
+    // Check if notifications are enabled
+    if (!notificationsEnabledCheckbox || !notificationsEnabledCheckbox.checked) {
+        return;
     }
     
-    // Update consistency score
-    if (consistencyScoreElement) {
-        let consistency = 0.5; // Default to neutral
-        if (prediction && prediction.class) {
-            // Create a temporary prediction object for consistency checking
-            const tempPrediction = { class: prediction.class };
-            consistency = checkPoseConsistency(tempPrediction);
+    // Check if it's bad posture with sufficient confidence
+    if (predictedClass === 'Bad posture' && confidence > 0.6) {
+        consecutiveBadPostureCount++;
+        console.log(`Bad posture detected: ${consecutiveBadPostureCount}/${notificationThreshold}`);
+        
+        // Send notification if we have enough consecutive bad posture detections
+        // and enough time has passed since last notification
+        if (consecutiveBadPostureCount >= notificationThreshold && 
+            now - lastBadPostureNotification > notificationCooldown) {
+            
+            console.log('Sending notification for bad posture...');
+            
+            // Send notification
+            if (window.electronAPI && window.electronAPI.sendNotification) {
+                window.electronAPI.sendNotification(
+                    '⚠️ Perfect Posture Alert',
+                    'Please sit up straight and adjust your posture!'
+                );
+                console.log('Notification sent via Electron API');
+            } else {
+                console.error('Electron API not available, trying browser notification...');
+                // Fallback to browser notification
+                if ('Notification' in window) {
+                    if (Notification.permission === 'granted') {
+                        new Notification('⚠️ Perfect Posture Alert', {
+                            body: 'Please sit up straight and adjust your posture!'
+                        });
+                    } else if (Notification.permission !== 'denied') {
+                        Notification.requestPermission().then(permission => {
+                            if (permission === 'granted') {
+                                new Notification('⚠️ Perfect Posture Alert', {
+                                    body: 'Please sit up straight and adjust your posture!'
+                                });
+                            }
+                        });
+                    }
+                }
+            }
+            
+            lastBadPostureNotification = now;
+            consecutiveBadPostureCount = 0; // Reset counter after notification
         }
-        const consistencyPercent = Math.round(consistency * 100);
-        consistencyScoreElement.textContent = `${consistencyPercent}%`;
-        consistencyScoreElement.className = `metric-value ${consistencyPercent > 80 ? 'high' : consistencyPercent > 60 ? 'medium' : 'low'}`;
-    }
-    
-    // Update adaptive threshold
-    if (adaptiveThresholdElement) {
-        const currentThreshold = calculateAdaptiveThreshold();
-        const thresholdPercent = Math.round(currentThreshold * 100);
-        adaptiveThresholdElement.textContent = `${thresholdPercent}%`;
-        adaptiveThresholdElement.className = `metric-value ${thresholdPercent < 75 ? 'high' : thresholdPercent < 85 ? 'medium' : 'low'}`;
+    } else if (predictedClass === 'Good posture' && confidence > 0.6) {
+        // Reset bad posture counter when good posture is detected
+        consecutiveBadPostureCount = 0;
+        console.log('Good posture detected - resetting bad posture counter');
     }
 }
 
-// Get detailed feedback based on prediction and pose analysis
-function getDetailedFeedback(prediction) {
-    const { class: predictedClass, confidence, isStable } = prediction;
-    
+// Get detailed feedback based on prediction
+function getDetailedFeedback(predictedClass, confidence) {
     // Base feedback
     let feedback = feedbackMessages[predictedClass] || 'Analyzing posture...';
     
@@ -600,82 +316,16 @@ function getClassType(className) {
 }
 
 // Draw pose skeleton on canvas
-function drawPose(keypoints) {
-    if (!keypoints) return;
+function drawPose(pose) {
+    if (!pose || !webcam.canvas) return;
     
-    // Clear canvas
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    // Draw the webcam image
+    ctx.drawImage(webcam.canvas, 0, 0);
     
-    // Draw keypoints
-    drawKeypoints(keypoints);
-    
-    // Draw skeleton
-    drawSkeleton(keypoints);
-}
-
-// Draw keypoints
-function drawKeypoints(keypoints) {
-    keypoints.forEach((keypoint, index) => {
-        if (keypoint.score > 0.2) {
-            const x = keypoint.position.x;
-            const y = keypoint.position.y;
-            
-            ctx.beginPath();
-            ctx.arc(x, y, 5, 0, 2 * Math.PI);
-            ctx.fillStyle = '#00ff00';
-            ctx.fill();
-            
-            ctx.beginPath();
-            ctx.arc(x, y, 8, 0, 2 * Math.PI);
-            ctx.strokeStyle = '#ffffff';
-            ctx.lineWidth = 2;
-            ctx.stroke();
-        }
-    });
-}
-
-// Draw skeleton connections
-function drawSkeleton(keypoints) {
-    // PoseNet Pose connections (17 keypoints)
-    const connections = [
-        [0, 1],   // nose to left_eye
-        [0, 2],   // nose to right_eye
-        [1, 3],   // left_eye to left_ear
-        [2, 4],   // right_eye to right_ear
-        [5, 6],   // left_shoulder to right_shoulder
-        [5, 7],   // left_shoulder to left_elbow
-        [7, 9],   // left_elbow to left_wrist
-        [6, 8],   // right_shoulder to right_elbow
-        [8, 10],  // right_elbow to right_wrist
-        [5, 11],  // left_shoulder to left_hip
-        [6, 12],  // right_shoulder to right_hip
-        [11, 12], // left_hip to right_hip
-        [11, 13], // left_hip to left_knee
-        [13, 15], // left_knee to left_ankle
-        [12, 14], // right_hip to right_knee
-        [14, 16]  // right_knee to right_ankle
-    ];
-    
-    connections.forEach(([first, second]) => {
-        const firstPoint = keypoints[first];
-        const secondPoint = keypoints[second];
-        
-        if (firstPoint && secondPoint && 
-            firstPoint.score > 0.2 && secondPoint.score > 0.2) {
-            
-            const x1 = firstPoint.position.x;
-            const y1 = firstPoint.position.y;
-            const x2 = secondPoint.position.x;
-            const y2 = secondPoint.position.y;
-            
-            ctx.beginPath();
-            ctx.moveTo(x1, y1);
-            ctx.lineTo(x2, y2);
-            ctx.strokeStyle = '#00ff00';
-            ctx.lineWidth = 3;
-            ctx.stroke();
-        }
-    });
+    // Draw the keypoints and skeleton
+    const minPartConfidence = 0.3;
+    tmPose.drawKeypoints(pose.keypoints, minPartConfidence, ctx);
+    tmPose.drawSkeleton(pose.keypoints, minPartConfidence, ctx);
 }
 
 // UI update functions
@@ -695,6 +345,118 @@ function updateConfidence(percentage) {
 
 function updateStatus(text) {
     statusIndicator.querySelector('.status-text').textContent = text;
+}
+
+// Test notification function
+async function testNotification() {
+    try {
+        console.log('Test notification button clicked');
+        console.log('Window.electronAPI available:', !!window.electronAPI);
+        console.log('Notification API available:', 'Notification' in window);
+        console.log('Current notification permission:', Notification.permission);
+        
+        // Request notification permission first
+        if ('Notification' in window && Notification.permission === 'default') {
+            console.log('Requesting notification permission...');
+            const permission = await Notification.requestPermission();
+            console.log('Notification permission result:', permission);
+        }
+        
+        // Send test notification directly
+        if (window.electronAPI && window.electronAPI.sendNotification) {
+            console.log('Sending via Electron API...');
+            window.electronAPI.sendNotification(
+                '✅ Perfect Posture Test',
+                'This is a test notification from Perfect Posture!'
+            );
+            updateFeedback('Test notification sent via Electron! Check your notifications.');
+        } else {
+            console.log('Electron API not available, trying browser notification...');
+            // Fallback to browser notification
+            if ('Notification' in window && Notification.permission === 'granted') {
+                console.log('Sending browser notification...');
+                const notification = new Notification('✅ Perfect Posture Test', {
+                    body: 'This is a test notification from Perfect Posture!',
+                    icon: null,
+                    requireInteraction: true
+                });
+                updateFeedback('Test notification sent via browser! Check your notifications.');
+                    } else {
+            console.log('Browser notification not available or permission denied');
+            updateFeedback('Please enable notifications in your browser settings. Permission: ' + Notification.permission);
+            // Fallback alert for testing
+            alert('Test notification: Perfect Posture Alert!\n\nThis is a test notification from Perfect Posture!');
+        }
+        }
+    } catch (error) {
+        console.error('Error testing notification:', error);
+        updateFeedback('Error testing notification: ' + error.message);
+    }
+}
+
+// Update accuracy metrics
+function updateAccuracyMetrics(pose, confidence) {
+    // Calculate pose quality based on keypoint confidence
+    const keypoints = pose.keypoints;
+    const visibleKeypoints = keypoints.filter(kp => kp.score > 0.3);
+    const poseQuality = visibleKeypoints.length / keypoints.length;
+    
+    // Add to history (keep last 10 readings)
+    poseQualityHistory.push(poseQuality);
+    if (poseQualityHistory.length > 10) {
+        poseQualityHistory.shift();
+    }
+    
+    // Calculate consistency based on confidence stability
+    consistencyHistory.push(confidence);
+    if (consistencyHistory.length > 10) {
+        consistencyHistory.shift();
+    }
+    
+    // Calculate consistency score (standard deviation of recent confidences)
+    const consistencyScore = calculateConsistency(consistencyHistory);
+    
+    // Update adaptive threshold based on recent performance
+    if (confidence > 0.8) {
+        adaptiveThreshold = Math.min(adaptiveThreshold + 0.01, 0.9);
+    } else if (confidence < 0.5) {
+        adaptiveThreshold = Math.max(adaptiveThreshold - 0.01, 0.3);
+    }
+    
+    // Update UI
+    if (poseQualityElement) {
+        const qualityPercent = Math.round(poseQuality * 100);
+        poseQualityElement.textContent = `${qualityPercent}%`;
+        poseQualityElement.className = `metric-value ${getQualityClass(qualityPercent)}`;
+    }
+    
+    if (consistencyScoreElement) {
+        const consistencyPercent = Math.round((1 - consistencyScore) * 100);
+        consistencyScoreElement.textContent = `${consistencyPercent}%`;
+        consistencyScoreElement.className = `metric-value ${getQualityClass(consistencyPercent)}`;
+    }
+    
+    if (adaptiveThresholdElement) {
+        const thresholdPercent = Math.round(adaptiveThreshold * 100);
+        adaptiveThresholdElement.textContent = `${thresholdPercent}%`;
+        adaptiveThresholdElement.className = `metric-value ${getQualityClass(thresholdPercent)}`;
+    }
+}
+
+// Calculate consistency (lower is better)
+function calculateConsistency(history) {
+    if (history.length < 2) return 0;
+    
+    const mean = history.reduce((sum, val) => sum + val, 0) / history.length;
+    const variance = history.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / history.length;
+    return Math.sqrt(variance);
+}
+
+// Get quality class for styling
+function getQualityClass(percentage) {
+    if (percentage >= 80) return 'high';
+    if (percentage >= 60) return 'medium';
+    return 'low';
 }
 
 // Initialize when DOM is loaded

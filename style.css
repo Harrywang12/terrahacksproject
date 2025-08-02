@@ -42,6 +42,8 @@ header p {
     font-weight: 300;
 }
 
+
+
 /* Main content */
 main {
     flex: 1;
@@ -59,11 +61,13 @@ main {
     padding: 20px;
     box-shadow: 0 10px 30px rgba(0,0,0,0.2);
     overflow: hidden;
+    width: 740px; 
+    height: 740px; 
 }
 
 #webcam {
-    width: 100%;
-    height: 400px;
+    width: 700px;
+    height: 900px;
     object-fit: cover;
     border-radius: 15px;
     transform: scaleX(-1); /* Mirror the video */
@@ -73,8 +77,8 @@ main {
     position: absolute;
     top: 20px;
     left: 20px;
-    width: calc(100% - 40px);
-    height: 400px;
+    width: 700px;
+    height: 900px;
     border-radius: 15px;
     pointer-events: none;
 }
@@ -252,6 +256,44 @@ footer {
     display: flex;
     gap: 15px;
     justify-content: center;
+    margin-bottom: 20px;
+}
+
+.settings {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin-top: 15px;
+}
+
+.notification-toggle {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    padding: 8px 12px;
+    border-radius: 20px;
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
+    transition: all 0.3s ease;
+}
+
+.notification-toggle:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.notification-toggle input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    accent-color: #4CAF50;
+    cursor: pointer;
+}
+
+.toggle-label {
+    font-size: 0.9rem;
+    color: white;
+    font-weight: 500;
+    cursor: pointer;
 }
 
 .btn {
@@ -286,6 +328,19 @@ footer {
     transform: translateY(-2px);
 }
 
+.btn-test {
+    background: linear-gradient(135deg, #ff9800, #f57c00);
+    color: white;
+    font-size: 0.8rem;
+    padding: 8px 16px;
+    margin-left: 15px;
+}
+
+.btn-test:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(255, 152, 0, 0.4);
+}
+
 .btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
@@ -307,12 +362,16 @@ footer {
         font-size: 2rem;
     }
     
-    #webcam {
-        height: 300px;
+        .webcam-container {
+        min-height: 440px;
     }
     
+    #webcam {
+        min-height: 400px;
+    }
+
     #pose-canvas {
-        height: 300px;
+        min-height: 400px;
     }
     
     .accuracy-metrics {
@@ -346,12 +405,16 @@ footer {
         padding: 20px;
     }
     
-    #webcam {
-        height: 250px;
+        .webcam-container {
+        min-height: 340px;
     }
     
+    #webcam {
+        min-height: 300px;
+    }
+
     #pose-canvas {
-        height: 250px;
+        min-height: 300px;
     }
 }
 

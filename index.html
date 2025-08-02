@@ -5,14 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Posture Checker</title>
     <link rel="stylesheet" href="style.css">
-    <!-- TensorFlow.js and PoseNet -->
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.11.0/dist/tf.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/posenet@2.2.2/dist/posenet.js"></script>
+    <!-- TensorFlow.js and Teachable Machine Pose -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/pose@0.8/dist/teachablemachine-pose.min.js"></script>
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>🧘 Posture Checker</h1>
+            <h1>🧘 Perfect Posture</h1>
             <p>Real-time posture monitoring with AI</p>
         </header>
 
@@ -71,6 +71,13 @@
             <div class="controls">
                 <button id="start-btn" class="btn btn-primary">Start Camera</button>
                 <button id="stop-btn" class="btn btn-secondary" disabled>Stop Camera</button>
+            </div>
+            <div class="settings">
+                <label class="notification-toggle">
+                    <input type="checkbox" id="notifications-enabled" checked>
+                    <span class="toggle-label">Enable Notifications</span>
+                </label>
+                <button id="test-notification-btn" class="btn btn-test">Test Notification</button>
             </div>
         </footer>
     </div>

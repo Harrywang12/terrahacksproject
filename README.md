@@ -1,11 +1,11 @@
-# 🧘 Posture Checker
+# 🧘 Perfect Posture
 
-A desktop application that uses AI to monitor your posture in real-time using your webcam. Built with Electron and TensorFlow.js, featuring a Teachable Machine pose classification model.
+A desktop application that uses AI to monitor your posture in real-time using your webcam. Built with Electron and TensorFlow.js, featuring an improved pose classification model for enhanced accuracy.
 
 ## ✨ Features
 
 - **Real-time Posture Detection**: Uses your webcam to continuously monitor your sitting posture
-- **AI-Powered Classification**: Leverages a custom-trained Teachable Machine model to classify posture types
+- **AI-Powered Classification**: Leverages an improved pose classification model for enhanced accuracy
 - **Visual Feedback**: Displays skeleton overlay on the video feed with keypoints
 - **Smart Feedback**: Provides personalized advice based on detected posture
 - **Confidence Scoring**: Shows how confident the AI is in its posture assessment
@@ -57,7 +57,7 @@ posture-checker/
 ├── preload.js           # Security context
 ├── package.json         # Dependencies and scripts
 ├── README.md           # This file
-└── my-pose-model/      # AI model files
+└── terrahacksmodel/    # AI model files
     ├── model.json
     ├── metadata.json
     └── weights.bin
@@ -92,7 +92,7 @@ npm run dist
 ## 🔧 Technical Details
 
 - **Framework**: Electron for cross-platform desktop app
-- **AI Model**: TensorFlow.js with Teachable Machine pose classification
+- **AI Model**: TensorFlow.js with improved pose classification model
 - **Pose Detection**: MediaPipe PoseNet for keypoint extraction
 - **Frontend**: Vanilla JavaScript with modern CSS
 - **Model Loading**: Local model files for offline operation

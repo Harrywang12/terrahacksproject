@@ -1,7 +1,7 @@
 {
-  "name": "posture-checker",
+  "name": "perfect-posture",
   "version": "1.0.0",
-  "description": "Desktop posture checker app using Electron and TensorFlow.js",
+  "description": "Desktop posture monitoring app using Electron and TensorFlow.js",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -23,8 +23,8 @@
     "electron-builder": "^24.0.0"
   },
   "build": {
-    "appId": "com.posturechecker.app",
-    "productName": "Posture Checker",
+    "appId": "com.perfectposture.app",
+    "productName": "Perfect Posture",
     "directories": {
       "output": "dist"
     },
