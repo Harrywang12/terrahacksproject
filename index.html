@@ -10,10 +10,149 @@
     <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/pose@0.8/dist/teachablemachine-pose.min.js"></script>
 </head>
 <body>
+    <!-- Background Elements -->
+    <div class="background-elements">
+        <div class="floating-orbs">
+            <div class="orb orb-1"></div>
+            <div class="orb orb-2"></div>
+            <div class="orb orb-3"></div>
+            <div class="orb orb-4"></div>
+            <div class="orb orb-5"></div>
+        </div>
+        
+        <div class="neural-network">
+            <div class="neural-node node-1"></div>
+            <div class="neural-node node-2"></div>
+            <div class="neural-node node-3"></div>
+            <div class="neural-node node-4"></div>
+            <div class="neural-node node-5"></div>
+            <div class="neural-node node-6"></div>
+            <svg class="neural-connections" width="100%" height="100%">
+                <line x1="15%" y1="20%" x2="85%" y2="80%" stroke="url(#connectionGradient)" stroke-width="1" opacity="0.3"/>
+                <line x1="25%" y1="70%" x2="75%" y2="30%" stroke="url(#connectionGradient)" stroke-width="1" opacity="0.2"/>
+                <line x1="10%" y1="50%" x2="60%" y2="20%" stroke="url(#connectionGradient)" stroke-width="1" opacity="0.25"/>
+                <line x1="40%" y1="80%" x2="90%" y2="40%" stroke="url(#connectionGradient)" stroke-width="1" opacity="0.2"/>
+                <line x1="20%" y1="30%" x2="80%" y2="60%" stroke="url(#connectionGradient)" stroke-width="1" opacity="0.3"/>
+                <defs>
+                    <linearGradient id="connectionGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" style="stop-color:#00f5ff" stop-opacity="0.6"/>
+                        <stop offset="50%" style="stop-color:#ff00ff" stop-opacity="0.4"/>
+                        <stop offset="100%" style="stop-color:#00ff7f" stop-opacity="0.6"/>
+                    </linearGradient>
+                </defs>
+            </svg>
+        </div>
+        
+        <div class="tech-grid">
+            <div class="grid-line grid-horizontal-1"></div>
+            <div class="grid-line grid-horizontal-2"></div>
+            <div class="grid-line grid-vertical-1"></div>
+            <div class="grid-line grid-vertical-2"></div>
+        </div>
+        
+        <div class="data-streams">
+            <div class="stream stream-1">
+                <div class="data-particle"></div>
+                <div class="data-particle"></div>
+                <div class="data-particle"></div>
+            </div>
+            <div class="stream stream-2">
+                <div class="data-particle"></div>
+                <div class="data-particle"></div>
+            </div>
+        </div>
+        
+        <div class="corner-elements">
+            <div class="corner corner-top-left">
+                <div class="corner-line corner-line-h"></div>
+                <div class="corner-line corner-line-v"></div>
+            </div>
+            <div class="corner corner-top-right">
+                <div class="corner-line corner-line-h"></div>
+                <div class="corner-line corner-line-v"></div>
+            </div>
+            <div class="corner corner-bottom-left">
+                <div class="corner-line corner-line-h"></div>
+                <div class="corner-line corner-line-v"></div>
+            </div>
+            <div class="corner corner-bottom-right">
+                <div class="corner-line corner-line-h"></div>
+                <div class="corner-line corner-line-v"></div>
+            </div>
+        </div>
+        
+        <div class="scanning-lines">
+            <div class="scan-line scan-1"></div>
+            <div class="scan-line scan-2"></div>
+        </div>
+    </div>
+
     <div class="container">
         <header>
-            <h1>🧘 Perfect Posture</h1>
-            <p>Real-time posture monitoring with AI</p>
+            <div class="logo-container">
+                <div class="logo">
+                    <div class="logo-icon">
+                        <svg width="56" height="56" viewBox="0 0 56 56" fill="none">
+                            <!-- Outer tech ring -->
+                            <circle cx="28" cy="28" r="26" stroke="url(#techGradient)" stroke-width="2" fill="none" opacity="0.6"/>
+                            <circle cx="28" cy="28" r="22" stroke="url(#primaryGradient)" stroke-width="2.5" fill="none"/>
+                            
+                            <!-- Spine representation -->
+                            <path d="M28 12 L28 44" stroke="url(#spineGradient)" stroke-width="3" stroke-linecap="round"/>
+                            
+                            <!-- Vertebrae points -->
+                            <circle cx="28" cy="15" r="2.5" fill="url(#primaryGradient)"/>
+                            <circle cx="28" cy="20" r="2" fill="url(#primaryGradient)" opacity="0.9"/>
+                            <circle cx="28" cy="25" r="2" fill="url(#primaryGradient)" opacity="0.8"/>
+                            <circle cx="28" cy="31" r="2" fill="url(#primaryGradient)" opacity="0.8"/>
+                            <circle cx="28" cy="36" r="2" fill="url(#primaryGradient)" opacity="0.9"/>
+                            <circle cx="28" cy="41" r="2.5" fill="url(#primaryGradient)"/>
+                            
+                            <!-- Head -->
+                            <circle cx="28" cy="11" r="4" fill="url(#headGradient)"/>
+                            
+                            <!-- Shoulders -->
+                            <path d="M18 18 L28 15 L38 18" stroke="url(#primaryGradient)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+                            
+                            <!-- Tech elements -->
+                            <circle cx="42" cy="14" r="1.5" fill="url(#accentGradient)" opacity="0.8"/>
+                            <circle cx="14" cy="42" r="1.5" fill="url(#accentGradient)" opacity="0.8"/>
+                            <circle cx="42" cy="42" r="1" fill="url(#accentGradient)" opacity="0.6"/>
+                            <circle cx="14" cy="14" r="1" fill="url(#accentGradient)" opacity="0.6"/>
+                            
+                            <defs>
+                                <linearGradient id="primaryGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                                    <stop offset="0%" style="stop-color:#00f5ff"/>
+                                    <stop offset="50%" style="stop-color:#0099ff"/>
+                                    <stop offset="100%" style="stop-color:#ff00ff"/>
+                                </linearGradient>
+                                <linearGradient id="spineGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                                    <stop offset="0%" style="stop-color:#00ff7f"/>
+                                    <stop offset="50%" style="stop-color:#00f5ff"/>
+                                    <stop offset="100%" style="stop-color:#00ff7f"/>
+                                </linearGradient>
+                                <linearGradient id="headGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                                    <stop offset="0%" style="stop-color:#ff00ff"/>
+                                    <stop offset="100%" style="stop-color:#00f5ff"/>
+                                </linearGradient>
+                                <linearGradient id="techGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                                    <stop offset="0%" style="stop-color:#00f5ff" stop-opacity="0.3"/>
+                                    <stop offset="100%" style="stop-color:#ff00ff" stop-opacity="0.3"/>
+                                </linearGradient>
+                                <linearGradient id="accentGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                                    <stop offset="0%" style="stop-color:#00ff7f"/>
+                                    <stop offset="100%" style="stop-color:#00f5ff"/>
+                                </linearGradient>
+                            </defs>
+                        </svg>
+                    </div>
+                    <div class="logo-text">
+                        <h1>Perfect Posture</h1>
+                        <span class="logo-tagline">Neural Posture Detection</span>
+                    </div>
+                </div>
+            </div>
+            <p>Advanced real-time posture monitoring with machine learning</p>
         </header>
 
         <main>
@@ -23,6 +162,19 @@
                 <div class="webcam-overlay">
                     <div class="status-indicator" id="status-indicator">
                         <span class="status-text">Initializing...</span>
+                    </div>
+                    <div class="confidence-circle" id="confidence-circle">
+                        <div class="confidence-progress">
+                            <svg class="confidence-ring" width="120" height="120">
+                                <circle cx="60" cy="60" r="50" stroke="rgba(255,255,255,0.1)" stroke-width="8" fill="none"></circle>
+                                <circle id="confidence-progress-ring" cx="60" cy="60" r="50" stroke="#00f5ff" stroke-width="8" fill="none" 
+                                        stroke-dasharray="314" stroke-dashoffset="314" transform="rotate(-90 60 60)"></circle>
+                            </svg>
+                            <div class="confidence-text-overlay">
+                                <span class="confidence-percentage" id="confidence-percentage">0%</span>
+                                <span class="confidence-label">Confidence</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -40,14 +192,6 @@
                     <div class="feedback-text" id="feedback-text">
                         <span>Initializing camera and model...</span>
                     </div>
-                </div>
-
-                <div class="confidence-card">
-                    <h3>Confidence</h3>
-                    <div class="confidence-bar">
-                        <div class="confidence-fill" id="confidence-fill"></div>
-                    </div>
-                    <span class="confidence-text" id="confidence-text">0%</span>
                 </div>
 
                 <div class="accuracy-metrics">

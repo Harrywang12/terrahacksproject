@@ -23,8 +23,8 @@ const video = document.getElementById('webcam');
 const poseCanvas = document.getElementById('pose-canvas');
 const predictionLabel = document.getElementById('prediction-label');
 const feedbackText = document.getElementById('feedback-text');
-const confidenceFill = document.getElementById('confidence-fill');
-const confidenceText = document.getElementById('confidence-text');
+const confidencePercentage = document.getElementById('confidence-percentage');
+const confidenceProgressRing = document.getElementById('confidence-progress-ring');
 const statusIndicator = document.getElementById('status-indicator');
 const startBtn = document.getElementById('start-btn');
 const stopBtn = document.getElementById('stop-btn');
@@ -86,13 +86,34 @@ async function startCamera() {
     try {
         updateStatus('Starting camera...');
         
+        // Hide the HTML video element and use TM webcam
+        const htmlVideo = document.getElementById('webcam');
+        if (htmlVideo) {
+            htmlVideo.style.display = 'none';
+        }
+        
         // Set up webcam using Teachable Machine API
         const width = 700;
-        const height = 900; 
+        const height = 700; // Match CSS dimensions 
         const flip = true; // whether to flip the webcam
         webcam = new tmPose.Webcam(width, height, flip); // width, height, flip
         await webcam.setup(); // request access to the webcam
         await webcam.play();
+        
+        // Append the webcam canvas to the container
+        const webcamContainer = document.querySelector('.webcam-container');
+        if (webcamContainer && webcam.canvas) {
+            // Style the webcam canvas
+            webcam.canvas.style.width = '700px';
+            webcam.canvas.style.height = '700px';
+            webcam.canvas.style.borderRadius = '15px';
+            webcam.canvas.style.objectFit = 'cover';
+            webcam.canvas.style.position = 'relative';
+            webcam.canvas.style.zIndex = '1';
+            
+            // Insert before the pose canvas
+            webcamContainer.insertBefore(webcam.canvas, canvas);
+        }
         
         // Set canvas size to match webcam
         canvas.width = width;
@@ -120,6 +141,17 @@ async function startCamera() {
 function stopCamera() {
     if (webcam) {
         webcam.stop();
+        
+        // Remove the webcam canvas if it exists
+        if (webcam.canvas && webcam.canvas.parentNode) {
+            webcam.canvas.parentNode.removeChild(webcam.canvas);
+        }
+    }
+    
+    // Show the HTML video element again
+    const htmlVideo = document.getElementById('webcam');
+    if (htmlVideo) {
+        htmlVideo.style.display = 'block';
     }
     
     isRunning = false;
@@ -339,8 +371,29 @@ function updateFeedback(text) {
 }
 
 function updateConfidence(percentage) {
-    confidenceFill.style.width = `${percentage}%`;
-    confidenceText.textContent = `${percentage}%`;
+    // Update circular progress ring
+    const circumference = 2 * Math.PI * 50; // radius = 50
+    const offset = circumference - (percentage / 100) * circumference;
+    
+    if (confidenceProgressRing) {
+        confidenceProgressRing.style.strokeDashoffset = offset;
+        
+        // Change ring color based on confidence level
+        if (percentage >= 80) {
+            confidenceProgressRing.style.stroke = '#00ff7f';
+        } else if (percentage >= 60) {
+            confidenceProgressRing.style.stroke = '#00f5ff';
+        } else if (percentage >= 40) {
+            confidenceProgressRing.style.stroke = '#ffa500';
+        } else {
+            confidenceProgressRing.style.stroke = '#ff4757';
+        }
+    }
+    
+    // Update percentage text
+    if (confidencePercentage) {
+        confidencePercentage.textContent = `${percentage}%`;
+    }
 }
 
 function updateStatus(text) {
