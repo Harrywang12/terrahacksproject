@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Posture Checker</title>
+    <link rel="stylesheet" href="style.css">
+    <!-- TensorFlow.js and PoseNet -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.11.0/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/posenet@2.2.2/dist/posenet.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🧘 Posture Checker</h1>
+            <p>Real-time posture monitoring with AI</p>
+        </header>
+
+        <main>
+            <div class="webcam-container">
+                <video id="webcam" autoplay muted playsinline></video>
+                <canvas id="pose-canvas"></canvas>
+                <div class="webcam-overlay">
+                    <div class="status-indicator" id="status-indicator">
+                        <span class="status-text">Initializing...</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="results-container">
+                <div class="prediction-card">
+                    <h3>Current Posture</h3>
+                    <div class="prediction-label" id="prediction-label">
+                        <span class="label-text">Loading...</span>
+                    </div>
+                </div>
+
+                <div class="feedback-card">
+                    <h3>Feedback</h3>
+                    <div class="feedback-text" id="feedback-text">
+                        <span>Initializing camera and model...</span>
+                    </div>
+                </div>
+
+                <div class="confidence-card">
+                    <h3>Confidence</h3>
+                    <div class="confidence-bar">
+                        <div class="confidence-fill" id="confidence-fill"></div>
+                    </div>
+                    <span class="confidence-text" id="confidence-text">0%</span>
+                </div>
+            </div>
+        </main>
+
+        <footer>
+            <div class="controls">
+                <button id="start-btn" class="btn btn-primary">Start Camera</button>
+                <button id="stop-btn" class="btn btn-secondary" disabled>Stop Camera</button>
+            </div>
+        </footer>
+    </div>
+
+    <script src="renderer.js"></script>
+</body>
+</html> 
