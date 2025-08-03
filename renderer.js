@@ -4,7 +4,6 @@ let webcam;
 let canvas;
 let ctx;
 let isRunning = false;
-let animationId;
 let maxPredictions;
 
 // Notification variables
@@ -86,6 +85,11 @@ async function startCamera() {
     try {
         updateStatus('Starting camera...');
         
+        // Start session tracking
+        if (window.sessionTracker) {
+            window.sessionTracker.startSession();
+        }
+        
         // Hide the HTML video element and use TM webcam
         const htmlVideo = document.getElementById('webcam');
         if (htmlVideo) {
@@ -124,11 +128,16 @@ async function startCamera() {
         startBtn.disabled = true;
         stopBtn.disabled = false;
         
+        // Start session timer
+        startSessionTimer();
+        
         updateStatus('Camera active');
         updateFeedback('Camera is now active. Position yourself in front of the camera.');
         
-        // Start the detection loop
+        // Start the detection loop - will run continuously even when app not focused
         detectPose();
+        
+        console.log('🔄 Detection loop started - will run in background when app is not focused');
         
     } catch (error) {
         console.error('Error starting camera:', error);
@@ -139,6 +148,11 @@ async function startCamera() {
 
 // Stop the webcam and pose detection
 function stopCamera() {
+    // End session tracking
+    if (window.sessionTracker) {
+        window.sessionTracker.endSession();
+    }
+    
     if (webcam) {
         webcam.stop();
         
@@ -158,6 +172,9 @@ function stopCamera() {
     startBtn.disabled = false;
     stopBtn.disabled = true;
     
+    // Stop session timer
+    stopSessionTimer();
+    
     // Clear canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     
@@ -176,9 +193,8 @@ function stopCamera() {
     updateConfidence(0);
     updateStatus('Camera stopped');
     
-    if (animationId) {
-        cancelAnimationFrame(animationId);
-    }
+    // Clear any running timeouts (since we switched from requestAnimationFrame)
+    // No need to cancel animationId since we're using setTimeout now
 }
 
 // Main pose detection loop
@@ -215,6 +231,11 @@ async function detectPose() {
             // Update UI with results
             updatePredictionResults(predictedClass, maxProb);
             
+            // Track posture data for progress monitoring
+            if (window.sessionTracker) {
+                window.sessionTracker.addReading(predictedClass, maxProb);
+            }
+            
             // Handle notifications for bad posture
             handlePostureNotification(predictedClass, maxProb);
             
@@ -230,8 +251,12 @@ async function detectPose() {
             updateConfidence(0);
         }
         
-        // Continue the loop
-        animationId = requestAnimationFrame(detectPose);
+        // Continue the loop - use setTimeout for background running
+        setTimeout(() => {
+            if (isRunning) {
+                detectPose();
+            }
+        }, 100); // Run every 100ms (10 FPS) for consistent background detection
         
     } catch (error) {
         console.error('Error in pose detection:', error);
@@ -281,34 +306,15 @@ function handlePostureNotification(predictedClass, confidence) {
         if (consecutiveBadPostureCount >= notificationThreshold && 
             now - lastBadPostureNotification > notificationCooldown) {
             
-            console.log('Sending notification for bad posture...');
+            console.log('🚨 Sending notification for bad posture...');
+            console.log('📍 Current app focus state:', document.hasFocus());
+            console.log('📍 Document visibility:', document.visibilityState);
             
-            // Send notification
-            if (window.electronAPI && window.electronAPI.sendNotification) {
-                window.electronAPI.sendNotification(
-                    '⚠️ Perfect Posture Alert',
-                    'Please sit up straight and adjust your posture!'
-                );
-                console.log('Notification sent via Electron API');
-            } else {
-                console.error('Electron API not available, trying browser notification...');
-                // Fallback to browser notification
-                if ('Notification' in window) {
-                    if (Notification.permission === 'granted') {
-                        new Notification('⚠️ Perfect Posture Alert', {
-                            body: 'Please sit up straight and adjust your posture!'
-                        });
-                    } else if (Notification.permission !== 'denied') {
-                        Notification.requestPermission().then(permission => {
-                            if (permission === 'granted') {
-                                new Notification('⚠️ Perfect Posture Alert', {
-                                    body: 'Please sit up straight and adjust your posture!'
-                                });
-                            }
-                        });
-                    }
-                }
-            }
+            // Send notification via enhanced system
+            sendPostureNotification(
+                '⚠️ Perfect Posture Alert',
+                'Please sit up straight and adjust your posture!'
+            );
             
             lastBadPostureNotification = now;
             consecutiveBadPostureCount = 0; // Reset counter after notification
@@ -415,31 +421,23 @@ async function testNotification() {
             console.log('Notification permission result:', permission);
         }
         
-        // Send test notification directly
+        // Send test notification using enhanced system
+        console.log('🧪 Sending test notification...');
+        console.log('Testing notifications when app is not focused...');
+        
+        // Try Electron first
         if (window.electronAPI && window.electronAPI.sendNotification) {
-            console.log('Sending via Electron API...');
-            window.electronAPI.sendNotification(
-                '✅ Perfect Posture Test',
-                'This is a test notification from Perfect Posture!'
-            );
-            updateFeedback('Test notification sent via Electron! Check your notifications.');
+            window.electronAPI.sendNotification('✅ Perfect Posture Test', 'This is a test notification from Perfect Posture!');
+            updateFeedback('Test notification sent! Now switch to another app and wait for the notification.');
+            
+            // Also try browser notification after 5 seconds for comparison
+            setTimeout(() => {
+                console.log('🧪 Testing browser notification as backup...');
+                sendBrowserNotification('🧪 Browser Test', 'This is a browser notification test!');
+            }, 5000);
         } else {
-            console.log('Electron API not available, trying browser notification...');
-            // Fallback to browser notification
-            if ('Notification' in window && Notification.permission === 'granted') {
-                console.log('Sending browser notification...');
-                const notification = new Notification('✅ Perfect Posture Test', {
-                    body: 'This is a test notification from Perfect Posture!',
-                    icon: null,
-                    requireInteraction: true
-                });
-                updateFeedback('Test notification sent via browser! Check your notifications.');
-                    } else {
-            console.log('Browser notification not available or permission denied');
-            updateFeedback('Please enable notifications in your browser settings. Permission: ' + Notification.permission);
-            // Fallback alert for testing
-            alert('Test notification: Perfect Posture Alert!\n\nThis is a test notification from Perfect Posture!');
-        }
+            sendBrowserNotification('✅ Perfect Posture Test', 'This is a test notification from Perfect Posture!');
+            updateFeedback('Test notification sent via browser! Check your browser notifications.');
         }
     } catch (error) {
         console.error('Error testing notification:', error);
@@ -512,5 +510,178 @@ function getQualityClass(percentage) {
     return 'low';
 }
 
+// Enhanced notification function
+function sendPostureNotification(title, body) {
+    console.log('🚨 Sending posture notification:', title, body);
+    console.log('📍 Document visibility:', document.visibilityState);
+    console.log('📍 Window focused:', document.hasFocus());
+    
+    if (window.electronAPI && window.electronAPI.sendNotification) {
+        console.log('📤 Attempting Electron native notifications');
+        window.electronAPI.sendNotification(title, body);
+    } else {
+        console.log('📱 Electron API unavailable, using browser notifications');
+        sendBrowserNotification(title, body);
+    }
+}
+
+// Browser notification fallback
+function sendBrowserNotification(title, body) {
+    if ('Notification' in window) {
+        if (Notification.permission === 'granted') {
+            console.log('✅ Showing browser notification');
+            const notification = new Notification(title, {
+                body: body,
+                icon: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDgiIGhlaWdodD0iNDgiIHZpZXdCb3g9IjAgMCA0OCA0OCIgZmlsbD0ibm9uZSI+PGNpcmNsZSBjeD0iMjQiIGN5PSIyNCIgcj0iMjAiIHN0cm9rZT0iIzAwZjVmZiIgc3Ryb2tlLXdpZHRoPSIzIiBmaWxsPSJub25lIi8+PC9zdmc+',
+                requireInteraction: true,
+                tag: 'posture-alert',
+                vibrate: [200, 100, 200]
+            });
+            
+            notification.onclick = () => {
+                window.focus();
+                notification.close();
+            };
+        } else if (Notification.permission !== 'denied') {
+            console.log('🔔 Requesting notification permission');
+            Notification.requestPermission().then(permission => {
+                if (permission === 'granted') {
+                    console.log('✅ Permission granted, sending notification');
+                    sendBrowserNotification(title, body);
+                } else {
+                    console.log('❌ Notification permission denied');
+                    showInAppAlert(title, body);
+                }
+            });
+        } else {
+            console.log('❌ Notifications denied, showing in-app alert');
+            showInAppAlert(title, body);
+        }
+    } else {
+        console.log('❌ Notifications not supported, showing in-app alert');
+        showInAppAlert(title, body);
+    }
+}
+
+// In-app alert fallback
+function showInAppAlert(title, body) {
+    // Create a temporary overlay notification
+    const alertDiv = document.createElement('div');
+    alertDiv.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: linear-gradient(135deg, rgba(255, 71, 87, 0.95), rgba(255, 0, 255, 0.95));
+        color: white;
+        padding: 15px 20px;
+        border-radius: 15px;
+        border: 2px solid rgba(255, 71, 87, 0.5);
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+        z-index: 9999;
+        max-width: 300px;
+        font-family: 'Inter', sans-serif;
+        animation: slideIn 0.3s ease-out;
+    `;
+    
+    alertDiv.innerHTML = `
+        <div style="font-weight: 700; margin-bottom: 5px;">${title}</div>
+        <div style="font-size: 0.9rem; opacity: 0.9;">${body}</div>
+    `;
+    
+    // Add animation keyframes
+    if (!document.querySelector('#alert-styles')) {
+        const style = document.createElement('style');
+        style.id = 'alert-styles';
+        style.textContent = `
+            @keyframes slideIn {
+                from { transform: translateX(100%); opacity: 0; }
+                to { transform: translateX(0); opacity: 1; }
+            }
+        `;
+        document.head.appendChild(style);
+    }
+    
+    document.body.appendChild(alertDiv);
+    
+    // Auto-remove after 5 seconds
+    setTimeout(() => {
+        if (alertDiv.parentNode) {
+            alertDiv.style.animation = 'slideIn 0.3s ease-out reverse';
+            setTimeout(() => alertDiv.remove(), 300);
+        }
+    }, 5000);
+    
+    // Click to dismiss
+    alertDiv.onclick = () => alertDiv.remove();
+}
+
+// Listen for notification responses from main process
+if (window.electronAPI) {
+    window.electronAPI.onNotificationSent((event, data) => {
+        if (data.type === 'native') {
+            console.log('✅ Native notification confirmed sent:', data);
+        } else {
+            console.log('✅ Notification confirmed sent:', data);
+        }
+    });
+    
+    window.electronAPI.onNotificationFailed((event, data) => {
+        console.log('❌ Notification failed in main process:', data);
+        if (data.fallback === 'browser') {
+            console.log('🔄 Main process is handling browser fallback');
+        } else {
+            console.log('🔄 Attempting manual browser fallback');
+            sendBrowserNotification('⚠️ Perfect Posture Alert', 'Please check your posture! You\'ve been slouching for a while.');
+        }
+    });
+}
+
+// Session Timer Functions
+function startSessionTimer() {
+    sessionStartTime = Date.now();
+    updateSessionTimer(); // Update immediately
+    
+    // Update timer every second
+    sessionTimerInterval = setInterval(updateSessionTimer, 1000);
+}
+
+function stopSessionTimer() {
+    if (sessionTimerInterval) {
+        clearInterval(sessionTimerInterval);
+        sessionTimerInterval = null;
+    }
+    sessionStartTime = null;
+    
+    // Reset timer display
+    const timerElement = document.getElementById('session-timer');
+    if (timerElement) {
+        timerElement.querySelector('.timer-text').textContent = '00:00';
+    }
+}
+
+function updateSessionTimer() {
+    if (!sessionStartTime) return;
+    
+    const elapsed = Date.now() - sessionStartTime;
+    const seconds = Math.floor(elapsed / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    
+    const timeString = `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
+    
+    const timerElement = document.getElementById('session-timer');
+    if (timerElement) {
+        timerElement.querySelector('.timer-text').textContent = timeString;
+    }
+}
+
+function getSessionDuration() {
+    if (!sessionStartTime) return 0;
+    return Math.floor((Date.now() - sessionStartTime) / 1000);
+}
+
 // Initialize when DOM is loaded
-document.addEventListener('DOMContentLoaded', init); 
+document.addEventListener('DOMContentLoaded', init);
+
+// Expose functions globally for auth system
+window.stopCamera = stopCamera; 

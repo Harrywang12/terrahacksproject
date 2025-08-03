@@ -87,7 +87,93 @@
         </div>
     </div>
 
-    <div class="container">
+    <!-- Login Screen -->
+    <div id="login-screen" class="login-screen">
+        <div class="login-container">
+            <div class="login-header">
+                <div class="login-logo">
+                    <svg width="64" height="64" viewBox="0 0 56 56" fill="none">
+                        <circle cx="28" cy="28" r="22" stroke="url(#loginGradient)" stroke-width="2.5" fill="none"/>
+                        <path d="M28 12 L28 44" stroke="url(#loginSpineGradient)" stroke-width="3" stroke-linecap="round"/>
+                        <circle cx="28" cy="15" r="2.5" fill="url(#loginGradient)"/>
+                        <circle cx="28" cy="20" r="2" fill="url(#loginGradient)" opacity="0.9"/>
+                        <circle cx="28" cy="25" r="2" fill="url(#loginGradient)" opacity="0.8"/>
+                        <circle cx="28" cy="31" r="2" fill="url(#loginGradient)" opacity="0.8"/>
+                        <circle cx="28" cy="36" r="2" fill="url(#loginGradient)" opacity="0.9"/>
+                        <circle cx="28" cy="41" r="2.5" fill="url(#loginGradient)"/>
+                        <circle cx="28" cy="11" r="4" fill="url(#loginHeadGradient)"/>
+                        <path d="M18 18 L28 15 L38 18" stroke="url(#loginGradient)" stroke-width="2.5" stroke-linecap="round"/>
+                        <defs>
+                            <linearGradient id="loginGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" style="stop-color:#00f5ff"/>
+                                <stop offset="100%" style="stop-color:#ff00ff"/>
+                            </linearGradient>
+                            <linearGradient id="loginSpineGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                                <stop offset="0%" style="stop-color:#00ff7f"/>
+                                <stop offset="50%" style="stop-color:#00f5ff"/>
+                                <stop offset="100%" style="stop-color:#00ff7f"/>
+                            </linearGradient>
+                            <linearGradient id="loginHeadGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" style="stop-color:#ff00ff"/>
+                                <stop offset="100%" style="stop-color:#00f5ff"/>
+                            </linearGradient>
+                        </defs>
+                    </svg>
+                </div>
+                <h1>Perfect Posture</h1>
+                <p>Track your posture journey</p>
+            </div>
+
+            <div class="auth-forms">
+                <!-- Login Form -->
+                <div id="login-form" class="auth-form active">
+                    <h2>Welcome Back</h2>
+                    <div class="form-group">
+                        <label for="login-email">Email</label>
+                        <input type="email" id="login-email" placeholder="Enter your email" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="login-password">Password</label>
+                        <input type="password" id="login-password" placeholder="Enter your password" required>
+                    </div>
+                    <button type="button" id="login-btn" class="auth-btn btn-primary">Sign In</button>
+                    <p class="auth-switch">Don't have an account? <span id="show-register">Sign up</span></p>
+                </div>
+
+                <!-- Register Form -->
+                <div id="register-form" class="auth-form">
+                    <h2>Create Account</h2>
+                    <div class="form-group">
+                        <label for="register-name">Full Name</label>
+                        <input type="text" id="register-name" placeholder="Enter your full name" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="register-email">Email</label>
+                        <input type="email" id="register-email" placeholder="Enter your email" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="register-password">Password</label>
+                        <input type="password" id="register-password" placeholder="Create a password" required>
+                    </div>
+                    <button type="button" id="register-btn" class="auth-btn btn-primary">Create Account</button>
+                    <p class="auth-switch">Already have an account? <span id="show-login">Sign in</span></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main App Container -->
+    <div id="main-app" class="container hidden">
+        <!-- User Dashboard Button -->
+        <div class="user-controls">
+            <button id="dashboard-btn" class="dashboard-btn">
+                📊 Dashboard
+            </button>
+            <button id="logout-btn" class="logout-btn">
+                🚪 Logout
+            </button>
+        </div>
+
         <header>
             <div class="logo-container">
                 <div class="logo">
@@ -179,20 +265,27 @@
                 </div>
             </div>
 
-            <div class="results-container">
-                <div class="prediction-card">
-                    <h3>Current Posture</h3>
-                    <div class="prediction-label" id="prediction-label">
-                        <span class="label-text">Loading...</span>
-                    </div>
+                    <div class="results-container">
+            <div class="session-timer-card">
+                <h3>Session Time</h3>
+                <div class="timer-display" id="session-timer">
+                    <span class="timer-text">00:00</span>
                 </div>
+            </div>
 
-                <div class="feedback-card">
-                    <h3>Feedback</h3>
-                    <div class="feedback-text" id="feedback-text">
-                        <span>Initializing camera and model...</span>
-                    </div>
+            <div class="prediction-card">
+                <h3>Current Posture</h3>
+                <div class="prediction-label" id="prediction-label">
+                    <span class="label-text">Loading...</span>
                 </div>
+            </div>
+
+            <div class="feedback-card">
+                <h3>Feedback</h3>
+                <div class="feedback-text" id="feedback-text">
+                    <span>Initializing camera and model...</span>
+                </div>
+            </div>
 
                 <div class="accuracy-metrics">
                     <div class="metric-card">
@@ -226,6 +319,72 @@
         </footer>
     </div>
 
+    <!-- Dashboard Modal -->
+    <div id="dashboard-modal" class="dashboard-modal hidden">
+        <div class="dashboard-content">
+            <div class="dashboard-header">
+                <h2>📊 Posture Progress Dashboard</h2>
+                <button id="close-dashboard" class="close-btn">✕</button>
+            </div>
+            
+            <div class="dashboard-body">
+                <div class="stats-overview">
+                    <div class="stat-card">
+                        <div class="stat-icon">📈</div>
+                        <div class="stat-info">
+                            <div class="stat-value" id="total-sessions">0</div>
+                            <div class="stat-label">Total Sessions</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">⏱️</div>
+                        <div class="stat-info">
+                            <div class="stat-value" id="total-time">0m</div>
+                            <div class="stat-label">Total Time</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">🎯</div>
+                        <div class="stat-info">
+                            <div class="stat-value" id="avg-posture">0%</div>
+                            <div class="stat-label">Avg. Good Posture</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon">📊</div>
+                        <div class="stat-info">
+                            <div class="stat-value" id="improvement">0%</div>
+                            <div class="stat-label">Improvement</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="progress-section">
+                    <h3>7-Day Progress</h3>
+                    <div class="progress-chart">
+                        <canvas id="progress-canvas" width="600" height="300"></canvas>
+                    </div>
+                </div>
+
+                <div class="insights-section">
+                    <h3>Insights & Recommendations</h3>
+                    <div id="insights-container" class="insights-container">
+                        <!-- Insights will be populated by JavaScript -->
+                    </div>
+                </div>
+
+                <div class="recent-sessions">
+                    <h3>Recent Sessions</h3>
+                    <div id="sessions-list" class="sessions-list">
+                        <!-- Sessions will be populated by JavaScript -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="auth.js"></script>
+    <script src="dashboard.js"></script>
     <script src="renderer.js"></script>
 </body>
 </html> 
